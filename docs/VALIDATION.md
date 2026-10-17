@@ -1,4 +1,4 @@
-# Validación de la reconstrucción
+# Validación de la reconstrucción V9 (histórico)
 
 Pruebas locales del 17 de octubre de 2026, con Node 24 y Chromium del sistema:
 
@@ -16,3 +16,12 @@ La composición posterior a V1 se ha recreado. Los nuevos puzzles se generan y r
 ## Recuperación desde GitHub comprobada
 
 Se clonó `origin/main` en `/tmp/nexo-restore-check`, sin copiar archivos de trabajo. Allí se ejecutaron `npm ci` con el lockfile, las 264 pruebas unitarias y la exportación. El HTML autónomo generado coincide byte a byte con el entregado: SHA-256 `1b7cc0fca19a0f821b2003b158f1c6c9b139e53dd4215ebc5c8bb0cb0e563c53`. La copia original archivada también coincide con el ZIP adjunto por SHA-256. Esto verifica que el repositorio remoto contiene lo necesario para recuperar la entrega, sin depender de los archivos temporales del chat.
+
+
+## Inicio simplificado V10
+
+Jugar/Continuar abre directamente el tablero pendiente. Un reto retoma o inicia un puzzle independiente; Otro reto inicia el siguiente sin mostrar un catálogo. Se retiraron mapa, páginas y selectores de rango. Los tres mundos son ambientaciones automáticas. Se conservan los 250 puzzles, las 51 agrupaciones de fase, las guías, los guardados y la música.
+
+La suite actual comprueba entrada con un toque, ausencia de selectores visibles, reanudación directa, reto independiente y siguiente reto con un toque, además de las regresiones de motor, guía, límites, pantallas pequeñas, avance y guardados. Los escenarios de fases posteriores preparan el guardado como precondición; ya no navegan por un selector inexistente en el producto.
+
+V10 pasó las 264 pruebas unitarias, 15 escenarios de navegador y la comprobación del ZIP autónomo extraído sin red, con cero peticiones externas. Se regeneraron y versionaron el HTML y ambos ZIP. Las comprobaciones de entrada directa y Otro reto utilizan los botones reales; el progreso posterior se prepara como fixture para probar la reanudación.

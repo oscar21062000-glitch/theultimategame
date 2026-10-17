@@ -4,17 +4,17 @@ Juego de conexiones para móvil, con **250 retos en 51 fases**, guías interacti
 
 ## Jugar sin instalar
 
-Descargar [NEXO-PC-v9.zip](downloads/NEXO-PC-v9.zip), extraerlo y abrir `NEXO/index.html`. También se puede descargar y abrir el [HTML autónomo](downloads/NEXO-preview-v9.html). En GitHub hay que usar el botón de descarga del archivo: la vista de código no ejecuta HTML.
+Descargar [NEXO-PC-v10.zip](downloads/NEXO-PC-v10.zip), extraerlo y abrir `NEXO/index.html`. También se puede descargar y abrir el [HTML autónomo](downloads/NEXO-preview-v10.html). En GitHub hay que usar el botón de descarga del archivo: la vista de código no ejecuta HTML.
 
 No requiere servidor ni conexión. El navegador puede limitar el almacenamiento al abrir archivos locales. En Ajustes → Mis datos se puede descargar y restaurar el progreso. No se envían datos a ningún servicio.
 
-Para hosting tradicional, extraer [NEXO-web-v9.zip](downloads/NEXO-web-v9.zip) en una carpeta del servidor. Las rutas son relativas; puede funcionar en raíz o subcarpeta. Usar HTTPS para instalación PWA y caché offline tras la primera visita. Este repositorio no implica que se haya publicado un sitio público.
+Para hosting tradicional, extraer [NEXO-web-v10.zip](downloads/NEXO-web-v10.zip) en una carpeta del servidor. Las rutas son relativas; puede funcionar en raíz o subcarpeta. Usar HTTPS para instalación PWA y caché offline tras la primera visita. Este repositorio no implica que se haya publicado un sitio público.
 
 ## Experiencia acordada
 
-El inicio tiene exactamente **Aventura**, **Juego libre** y **Ajustes**. Sin barra lateral, paneles de información permanentes ni mensajes de guardar y salir.
+El inicio tiene exactamente **Jugar** (o **Continuar** si hay progreso), **Un reto** y **Ajustes**. Jugar abre directamente el punto pendiente de la aventura; Un reto abre una partida independiente. Sin barra lateral, paneles de información permanentes ni mensajes de guardar y salir.
 
-Un nivel es un puzzle y una fase agrupa varios. Las tres primeras fases contienen 3, 3 y 4 puzzles ordinarios, con dos guías introductorias adicionales. Se añaden 48 fases de cinco puzzles, hasta 250. Aventura avanza dentro de la fase con una transición breve y ofrece un cierre al terminarla. El mapa muestra tres fases por página y permite saltar directamente a cualquier tramo. Juego libre muestra diez retos por página y no encadena partidas.
+Un nivel es un puzzle y una fase agrupa varios. Las tres primeras fases contienen 3, 3 y 4 puzzles ordinarios, con dos guías introductorias adicionales. Se añaden 48 fases de cinco puzzles, hasta 250. Aventura avanza dentro de la fase con una transición breve y ofrece un cierre al terminarla. No hay mapa, selector de páginas, catálogo ni elección de mundo antes de jugar. Las ambientaciones Umbral, Corriente y Órbita cambian automáticamente. Un reto retoma el puzzle independiente pendiente o propone el siguiente sin resolver; al terminar, Otro reto inicia uno nuevo con un toque.
 
 La primera conexión de cada fase, estilo o regla es guiada dentro del propio tablero. Se elige el origen, después el destino y se observa el efecto. En propagación se ve primero el intercambio y después la onda, sin gastar un movimiento adicional. Luego se termina ese mismo puzzle sin guía. Las guías y las partidas conservan su paso al recargar.
 
