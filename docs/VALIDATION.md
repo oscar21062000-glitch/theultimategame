@@ -12,3 +12,7 @@ Pruebas locales del 17 de octubre de 2026, con Node 24 y Chromium del sistema:
 - Código, copia original y descargables subidos a GitHub en commits intermedios. La entrega final verifica hash local/remoto. La ejecución remota de GitHub Actions no se deduce de estas pruebas locales.
 
 La composición posterior a V1 se ha recreado. Los nuevos puzzles se generan y resuelven de forma determinista: esto no garantiza dificultad uniforme, diversión ni tiempo por sesión. Quedan pendientes pruebas con personas, dispositivos móviles físicos, lectores de pantalla, nombre/originalidad y piloto longitudinal. No se afirman beneficios clínicos para TDA/AACC.
+
+## Recuperación desde GitHub comprobada
+
+Se clonó `origin/main` en `/tmp/nexo-restore-check`, sin copiar archivos de trabajo. Allí se ejecutaron `npm ci` con el lockfile, las 264 pruebas unitarias y la exportación. El HTML autónomo generado coincide byte a byte con el entregado: SHA-256 `1b7cc0fca19a0f821b2003b158f1c6c9b139e53dd4215ebc5c8bb0cb0e563c53`. La copia original archivada también coincide con el ZIP adjunto por SHA-256. Esto verifica que el repositorio remoto contiene lo necesario para recuperar la entrega, sin depender de los archivos temporales del chat.
