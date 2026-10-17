@@ -32,3 +32,8 @@ V10 pasó las 264 pruebas unitarias, 15 escenarios de navegador y la comprobaci�
 El número de posición se sitúa visualmente debajo y fuera de cada círculo. Las guías, el objetivo y los nombres accesibles conservan la referencia por posición. Al agotar el presupuesto sin solución, aparece un único botón Reiniciar grande y se mantiene Deshacer. Ganar en el último movimiento o revisar una guía resuelta no presenta el estado de reinicio por fallo.
 
 La suite de navegador comprueba números fuera de las piezas en varios tamaños, botón de reinicio de al menos 240 × 50 px en pantallas móviles, ausencia de duplicados, conservación al recargar y vuelta al estado normal tras deshacer/reiniciar.
+
+
+## Explicación de propagación
+
+La guía separa intercambio, predicción del destino de la onda y cambio de símbolo. Define destino como la segunda pieza tocada, muestra el orden con vuelta al 1 y explica que la onda sigue los números, no las líneas. La ayuda `?` ofrece tres pasos y un ejemplo concreto. La predicción incorrecta no consume conexiones y tanto ese paso como la observación pueden reanudarse. Se evita presentar el resultado como una flecha entre símbolos sin contexto.

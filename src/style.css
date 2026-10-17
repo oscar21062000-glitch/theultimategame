@@ -6,3 +6,8 @@
 
 .restart-prominent{width:100%;max-width:315px;min-height:56px;margin:0 auto 12px;justify-content:center;gap:18px;font-size:17px}.is-exhausted .board{width:min(100%,330px,calc(100svh - 421px))}
 @media(max-height:700px){.is-exhausted .board{width:min(100%,300px,calc(100svh - 378px))}.restart-prominent{min-height:50px;margin-bottom:8px}}
+
+.has-wave-guide .game-heading h1{font-size:clamp(26px,7.5vw,34px);letter-spacing:1px}.guide-route,.guide-cycle{margin:8px auto 0;text-align:center}.guide-route>span,.guide-cycle>span{display:block;font-size:9px;color:var(--muted);line-height:1.6}.guide-route>div{display:flex;justify-content:center;align-items:center;gap:7px;font-size:12px;line-height:1.8}.route-destination{color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:3px}.guide-cycle>div{font-size:18px;letter-spacing:3px;line-height:1.8;color:var(--text)}.guide-review .move-budget,.guide-review .moves-label{display:none}.has-wave-guide .game-heading p{min-height:0}.has-wave-guide.guide-review .game-bottom{padding-top:5px}.has-wave-guide .board{width:min(100%,315px,calc(100svh - 415px))}
+@media(max-height:700px){.has-wave-guide .board{width:min(100%,280px,calc(100svh - 355px))}.has-wave-guide .game-heading h1{font-size:27px}.guide-route,.guide-cycle{margin-top:5px}.guide-cycle>div{font-size:16px;line-height:1.6}}
+
+#rule-text{white-space:pre-line;line-height:1.85}
