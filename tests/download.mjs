@@ -2,7 +2,7 @@ import {chromium,expect} from '@playwright/test';import fs from 'node:fs/promise
 const temp=await fs.mkdtemp(path.join(os.tmpdir(),'nexo-export-'));let browser;
 try{
  const result=spawnSync(process.execPath,['scripts/export.mjs',temp],{encoding:'utf8'});if(result.status!==0)throw Error(result.stderr);
- const zip=spawnSync('python3',['-c',"import zipfile,sys;sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read('NEXO/index.html').decode())",path.join(temp,'NEXO-PC-v10.zip')],{encoding:'utf8',maxBuffer:3e6});if(zip.status!==0)throw Error(zip.stderr);expect(zip.stdout).toBe(await fs.readFile(path.join(temp,'NEXO-preview-v10.html'),'utf8'));
+ const zip=spawnSync('python3',['-c',"import zipfile,sys;sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read('NEXO/index.html').decode())",path.join(temp,'NEXO-PC-v11.zip')],{encoding:'utf8',maxBuffer:3e6});if(zip.status!==0)throw Error(zip.stderr);expect(zip.stdout).toBe(await fs.readFile(path.join(temp,'NEXO-preview-v11.html'),'utf8'));
  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||(existsSync('/usr/bin/chromium')?'/usr/bin/chromium':undefined)});
  const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'});await context.setOffline(true);const page=await context.newPage(),errors=[],requests=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>requests.push(r.url()));
  // The managed Chromium blocks file: navigation. Execute the exact extracted

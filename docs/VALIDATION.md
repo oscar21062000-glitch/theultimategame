@@ -25,3 +25,10 @@ Jugar/Continuar abre directamente el tablero pendiente. Un reto retoma o inicia 
 La suite actual comprueba entrada con un toque, ausencia de selectores visibles, reanudación directa, reto independiente y siguiente reto con un toque, además de las regresiones de motor, guía, límites, pantallas pequeñas, avance y guardados. Los escenarios de fases posteriores preparan el guardado como precondición; ya no navegan por un selector inexistente en el producto.
 
 V10 pasó las 264 pruebas unitarias, 15 escenarios de navegador y la comprobación del ZIP autónomo extraído sin red, con cero peticiones externas. Se regeneraron y versionaron el HTML y ambos ZIP. Las comprobaciones de entrada directa y Otro reto utilizan los botones reales; el progreso posterior se prepara como fixture para probar la reanudación.
+
+
+## Piezas y reinicio V11
+
+El número de posición se sitúa visualmente debajo y fuera de cada círculo. Las guías, el objetivo y los nombres accesibles conservan la referencia por posición. Al agotar el presupuesto sin solución, aparece un único botón Reiniciar grande y se mantiene Deshacer. Ganar en el último movimiento o revisar una guía resuelta no presenta el estado de reinicio por fallo.
+
+La suite de navegador comprueba números fuera de las piezas en varios tamaños, botón de reinicio de al menos 240 × 50 px en pantallas móviles, ausencia de duplicados, conservación al recargar y vuelta al estado normal tras deshacer/reiniciar.

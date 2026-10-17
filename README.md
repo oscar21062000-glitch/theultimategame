@@ -4,11 +4,11 @@ Juego de conexiones para móvil, con **250 retos en 51 fases**, guías interacti
 
 ## Jugar sin instalar
 
-Descargar [NEXO-PC-v10.zip](downloads/NEXO-PC-v10.zip), extraerlo y abrir `NEXO/index.html`. También se puede descargar y abrir el [HTML autónomo](downloads/NEXO-preview-v10.html). En GitHub hay que usar el botón de descarga del archivo: la vista de código no ejecuta HTML.
+Descargar [NEXO-PC-v11.zip](downloads/NEXO-PC-v11.zip), extraerlo y abrir `NEXO/index.html`. También se puede descargar y abrir el [HTML autónomo](downloads/NEXO-preview-v11.html). En GitHub hay que usar el botón de descarga del archivo: la vista de código no ejecuta HTML.
 
 No requiere servidor ni conexión. El navegador puede limitar el almacenamiento al abrir archivos locales. En Ajustes → Mis datos se puede descargar y restaurar el progreso. No se envían datos a ningún servicio.
 
-Para hosting tradicional, extraer [NEXO-web-v10.zip](downloads/NEXO-web-v10.zip) en una carpeta del servidor. Las rutas son relativas; puede funcionar en raíz o subcarpeta. Usar HTTPS para instalación PWA y caché offline tras la primera visita. Este repositorio no implica que se haya publicado un sitio público.
+Para hosting tradicional, extraer [NEXO-web-v11.zip](downloads/NEXO-web-v11.zip) en una carpeta del servidor. Las rutas son relativas; puede funcionar en raíz o subcarpeta. Usar HTTPS para instalación PWA y caché offline tras la primera visita. Este repositorio no implica que se haya publicado un sitio público.
 
 ## Experiencia acordada
 
@@ -22,12 +22,12 @@ Los dos modos tienen guardados y resoluciones independientes. Guardado silencios
 
 ## Reglas y dificultad
 
-Copia el objetivo por número de posición. Los símbolos permiten distinguir piezas sin depender del color. Toca dos piezas o arrastra entre extremos unidos por una línea. Teclado: Tab y Enter/Espacio; Escape cancela la selección.
+Copia el objetivo por número de posición. Los símbolos permiten distinguir piezas sin depender del color. El número de posición aparece debajo de cada pieza, fuera del círculo, dejando solo el símbolo dentro. Toca dos piezas o arrastra entre extremos unidos por una línea. Teclado: Tab y Enter/Espacio; Escape cancela la selección.
 
 - Intercambio: los extremos intercambian símbolos.
 - Propagación: después del intercambio, la pieza siguiente al destino en sentido horario cambia `● → ≋ → + → ●`. Sigue la numeración; tras la última vuelve la 1. La pieza afectada puede ser el origen. La dirección importa.
 
-El límite habitual es la solución mínima más un movimiento. Reto exacto exige el mínimo al empezar un nuevo puzzle. Deshacer recupera movimientos, reiniciar restaura el presupuesto y las pistas no gastan. Si desde el estado actual no hay solución dentro del presupuesto, la ayuda indica que hace falta deshacer o reiniciar.
+El límite habitual es la solución mínima más un movimiento. Reto exacto exige el mínimo al empezar un nuevo puzzle. Deshacer recupera movimientos, reiniciar restaura el presupuesto y las pistas no gastan. Si desde el estado actual no hay solución dentro del presupuesto, la ayuda indica que hace falta deshacer o reiniciar. Al agotar los movimientos sin resolverlo, Reiniciar aparece como botón principal grande; Deshacer sigue disponible.
 
 El catálogo se genera de forma determinista antes de distribuirse. Los tableros, objetivos y IDs de los diez retos originales se conservan, corrigiendo mínimos si fuese necesario. Los nuevos tienen soluciones verificadas y se descartan copias por cambios de paleta, rotación o reflejo. Tamaño y profundidad crecen por tramos; no hay garantía de dificultad estrictamente creciente. Las firmas canónicas no sustituyen revisión de diseño con personas.
 
