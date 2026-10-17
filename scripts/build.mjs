@@ -1,0 +1,1 @@
+import fs from 'node:fs/promises';await fs.rm('dist',{recursive:true,force:true});await fs.mkdir('dist',{recursive:true});for(const file of ['index.html','src','sw.js','icon.svg','manifest.webmanifest'])await fs.cp(file,`dist/${file}`,{recursive:true});console.log('Static build ready');

@@ -9,6 +9,7 @@ export function validateLevel(level) {
   }
   if (!['swap', 'propagate'].includes(level.rule)) throw new Error('Unknown rule');
   if (!Array.isArray(level.edges) || !level.edges.length || level.edges.some(([a,b]) => !Number.isInteger(a) || !Number.isInteger(b) || a === b || a < 0 || b < 0 || a >= level.nodes.length || b >= level.nodes.length)) throw new Error('Invalid edge');
+  if (level.maxMoves !== undefined && (!Number.isInteger(level.maxMoves) || level.maxMoves < 1)) throw new Error('Invalid move limit');
   return true;
 }
 
@@ -53,6 +54,7 @@ export function solve(level, initial = level.initial) {
 }
 
 export function move(session, a, b) {
+  if (remainingMoves(session) === 0 || isSolved(session.level,session.state)) return session;
   const result = transition(session.level, session.state, a, b);
   if (!result.valid) return session;
   return { ...session, state: result.state, history: [...session.history, [...session.state]], events: result.events };
@@ -61,7 +63,8 @@ export function undo(session) {
   if (!session.history.length) return session;
   return { ...session, state: [...session.history.at(-1)], history: session.history.slice(0,-1), events: [] };
 }
-export const createSession = level => ({ level, state: [...level.initial], history: [], events: [] });
+export const createSession = (level, moveLimit=level.maxMoves||level.suggestedMoves+1) => ({ level, state: [...level.initial], history: [], events: [], moveLimit });
+export const remainingMoves = session => Math.max(0,session.moveLimit-session.history.length);
 
 export function dailyIndex(date, count) {
   let hash = 2166136261;

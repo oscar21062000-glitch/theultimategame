@@ -1,44 +1,5 @@
 <!doctype html>
-<html lang="es" data-theme="dark">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#101820">
-  <meta name="description" content="NEXO. Un puzzle breve, un pequeño descubrimiento y un final claro. Conecta para transformar.">
-  <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="stylesheet" href="/src/style.css">
-  <title>NEXO — Una pausa con sentido</title>
-</head>
-<body>
-  <a class="skip" href="#main">Saltar al contenido</a>
-  <div class="app-shell">
-    <aside class="sidebar" aria-label="Navegación principal">
-      <a href="#inicio" class="brand" aria-label="Nexo, inicio"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 25V7l18 18V7"/><circle cx="7" cy="7" r="3"/><circle cx="25" cy="25" r="3"/></svg>NEXO</a>
-      <div class="side-caption">UN POCO DE ESPACIO<br>PARA TU MENTE.</div>
-      <nav>
-        <button data-nav="home" class="nav-item active"><span class="nav-number">01</span>Tu pausa<span class="nav-dot"></span></button>
-        <button data-nav="collection" class="nav-item"><span class="nav-number">02</span>Los puzzles<span class="nav-dot"></span></button>
-        <button data-nav="about" class="nav-item"><span class="nav-number">03</span>La idea<span class="nav-dot"></span></button>
-      </nav>
-      <div class="side-bottom"><div class="tiny-orbit" aria-hidden="true"><i></i><i></i><i></i></div><p>Menos ruido.<br>Más conexiones.</p><button id="settings-open" class="settings-link"><span aria-hidden="true">☷</span> A tu manera</button><span class="edition">VOL. 01 / PROTOTIPO</span></div>
-    </aside>
-    <div class="content-shell">
-      <header class="topbar"><span class="eyebrow" id="section-label">EL ARTE DE HACER UNA PAUSA</span><span class="top-status"><i></i>Sin prisa. Sin rachas.</span></header><button class="mobile-settings" aria-label="Preferencias">☷</button>
-      <main id="main" tabindex="-1"></main>
-      <footer class="footer"><span>UN RETO. UNA SOLUCIÓN. Y SIGUES CON TU DÍA.</span><span>Hecho para desconectar <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></span></footer>
-    </div>
-  </div>
-  <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
-  <dialog id="settings" aria-labelledby="settings-title"><div class="dialog-heading"><span class="eyebrow">TU ESPACIO</span><button class="icon-button" id="settings-close" aria-label="Cerrar preferencias">×</button></div><h2 id="settings-title">A tu manera.</h2><p class="muted">La calma también se elige.</p><form id="preferences">
-    <label class="setting-row">Apariencia<select name="theme"><option value="dark">Oscura</option><option value="light">Clara</option><option value="system">Del sistema</option></select></label>
-    <label class="setting-row">Reducir movimiento<input type="checkbox" name="reduced"></label>
-    <label class="setting-row">Sonidos suaves<input type="checkbox" name="sound"></label>
-    <label class="setting-row">Vibración sutil<input type="checkbox" name="haptic"></label>
-    <label class="setting-row">Prefiero un reto mayor<input type="checkbox" name="harder"></label>
-    <label class="setting-row">Registrar mis sesiones en este dispositivo<input type="checkbox" name="metrics"></label>
-    <p class="fine-print">Opcional: tiempo, movimientos, pistas y reinicios. Nunca se envían datos. Al desactivarlo, se borran las métricas guardadas.</p>
-  </form><button class="text-button" id="export-data">Exportar mis datos locales ↓</button><button class="text-button danger" id="clear-data">Borrar mis datos…</button><p class="fine-print" id="storage-notice">Progreso y preferencias se guardan solo en este navegador. Sin cuenta ni conexión obligatoria.</p></dialog>
-  <script type="module" src="/src/app.js"></script>
-</body>
-</html>
+<html lang="es" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#0b131d"><meta name="description" content="NEXO. Conecta, descubre y sigue tu camino."><link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="manifest" href="./manifest.webmanifest"><link rel="stylesheet" href="./src/style.css"><title>NEXO</title></head>
+<body><canvas id="atmosphere" aria-hidden="true"></canvas><a class="skip" href="#main">Saltar al juego</a><main id="main" tabindex="-1"></main><div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+<dialog id="settings" aria-labelledby="settings-title"><div class="dialog-heading"><h2 id="settings-title">A tu manera.</h2><button class="game-icon" id="settings-close" aria-label="Cerrar ajustes">×</button></div><form id="preferences"><label class="setting-row">Música<input type="checkbox" name="music"></label><label class="setting-row">Volumen<input name="volume" type="range" min="0" max="0.7" step="0.01"></label><label class="setting-row">Atmósfera animada<input type="checkbox" name="immersive"></label><details class="advanced-preferences"><summary>Más opciones</summary><label class="setting-row">Apariencia<select name="theme"><option value="dark">Oscura</option><option value="light">Clara</option><option value="system">Del sistema</option></select></label><label class="setting-row">Reducir movimiento<input type="checkbox" name="reduced"></label><label class="setting-row">Efectos suaves<input type="checkbox" name="sound"></label><label class="setting-row">Vibración sutil<input type="checkbox" name="haptic"></label><label class="setting-row">Reto exacto<input type="checkbox" name="harder"></label><p class="fine-print">Exige la solución mínima al empezar un reto nuevo.</p><label class="setting-row">Registrar mis sesiones<input type="checkbox" name="metrics"></label><p class="fine-print">Solo en este dispositivo. Desactivarlo borra las métricas.</p></details></form><details class="local-data-options"><summary>Mis datos</summary><button class="text-button" id="export-data">Descargar mi progreso</button><label class="text-button import-label">Restaurar progreso<input class="sr-only" id="import-data" type="file" accept="application/json,.json"></label><button class="text-button" id="restart-adventure">Reiniciar aventura…</button><button class="text-button danger" id="clear-data">Borrar todos mis datos…</button><p class="fine-print" id="storage-notice">El progreso se guarda automáticamente en este navegador.</p></details></dialog>
+<dialog id="rule-dialog" aria-labelledby="rule-title"><div class="dialog-heading"><h2 id="rule-title">Una conexión.</h2><button class="game-icon" id="quick-close" aria-label="Cerrar ayuda">×</button></div><p id="rule-text"></p><p class="fine-print">Copia el objetivo por número de posición. Cada conexión gasta un movimiento. Deshacer lo recupera y las pistas no gastan.</p></dialog><script type="module" src="./src/app.js"></script></body></html>

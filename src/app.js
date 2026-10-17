@@ -1,255 +1,81 @@
-import { createSession, move, undo, solve, isSolved, isAllowed, dailyIndex } from './engine.js';
-
-const levels = await fetch('/src/levels.json').then(r => { if (!r.ok) throw Error('No se pudo cargar el catálogo'); return r.json(); });
-const $ = (selector, root=document) => root.querySelector(selector);
-const main = $('#main');
-const palette = ['Ámbar · punto', 'Turquesa · líneas', 'Lavanda · cruz'];
-const marks = ['●','≋','+'];
-const defaults = {theme:'dark',reduced:false,sound:false,haptic:false,harder:false,metrics:false};
-const emptyData = () => ({version:1,prefs:{...defaults},solved:[],sessions:[],resume:null,tutorialDone:false});
-let storageAvailable = true;
-function load() {
-  try {
-    const data = JSON.parse(localStorage.getItem('nexo-v1') || 'null');
-    if (!data || data.version!==1) return emptyData();
-    const prefs = {...defaults};
-    for (const key of Object.keys(prefs)) {
-      if (key==='theme' ? ['dark','light','system'].includes(data.prefs?.[key]) : typeof data.prefs?.[key]==='boolean') prefs[key]=data.prefs[key];
-    }
-    const validState = (s,n) => Array.isArray(s) && s.length===n && s.every(v=>Number.isInteger(v)&&v>=0&&v<=2);
-    const level = levels.find(l=>l.id===data.resume?.id);
-    const resume = level && validState(data.resume.state,level.nodes.length) && Array.isArray(data.resume.history) && data.resume.history.every(s=>validState(s,level.nodes.length)) ? data.resume : null;
-    return {...emptyData(),prefs,solved:Array.isArray(data.solved)?data.solved.filter(id=>levels.some(l=>l.id===id)):[],sessions:prefs.metrics&&Array.isArray(data.sessions)?data.sessions.slice(-100):[],resume,tutorialDone:data.tutorialDone===true};
-  } catch { storageAvailable=false; return emptyData(); }
+import {createSession,move,undo,solve,isSolved,isAllowed,remainingMoves,transition} from './engine.js';
+import {createCampaign,createChapters,chapterIdFor,worldFor,chapterStages,levelProgress,nextCampaignStage,completesChapter,guideState} from './campaign.js';
+import {createAtmosphere,WORLDS} from './atmosphere.js';
+import {createSoundtrack} from './soundtrack.js';
+const levels = await fetch(new URL('./levels.json',import.meta.url)).then(r=>{if(!r.ok)throw Error('No se pudo cargar el catálogo');return r.json();});
+const stages=createCampaign(levels),chapters=createChapters(levels),$=s=>document.querySelector(s),main=$('#main'),marks=['●','≋','+'],palette=['ámbar, punto','turquesa, líneas','lavanda, cruz'];
+const defaults={theme:'dark',reduced:false,sound:false,music:true,volume:.35,immersive:false,haptic:false,harder:false,metrics:false};
+const emptyData=()=>({version:1,prefs:{...defaults},solved:[],freeSolved:[],sessions:[],resume:null,freeResume:null,nextStage:0,campaignFinished:false,tutorialDone:false});
+let storageAvailable=true;
+function parseData(raw){
+ if(!raw||raw.version!==1)return emptyData();
+ const result=emptyData();
+ for(const key of Object.keys(defaults)){const v=raw.prefs?.[key];if(key==='theme'){if(['light','dark','system'].includes(v))result.prefs[key]=v;}else if(key==='volume'){if(Number.isFinite(v))result.prefs.volume=Math.max(0,Math.min(.7,v));}else if(typeof v==='boolean')result.prefs[key]=v;}
+ for(const key of ['solved','freeSolved'])result[key]=Array.isArray(raw[key])?[...new Set(raw[key].filter(id=>stages.some(l=>l.id===id)))]:[];
+ const validState=(s,n)=>Array.isArray(s)&&s.length===n&&s.every(c=>Number.isInteger(c)&&c>=0&&c<3);
+ for(const key of ['resume','freeResume']){const r=raw[key],l=stages.find(x=>x.id===r?.id);if(l&&validState(r.state,l.nodes.length)&&Array.isArray(r.history)&&r.history.length<=l.maxMoves&&r.history.every(s=>validState(s,l.nodes.length))){const limit=Number.isInteger(r.moveLimit)&&r.moveLimit>=r.history.length&&r.moveLimit<=l.maxMoves?r.moveLimit:l.maxMoves;result[key]={...r,moveLimit:limit,guidePhase:['connect','swap','result','practice'].includes(r.guidePhase)?r.guidePhase:r.history.length?'practice':l.guide?'connect':'practice'};}}
+ const pending=stages.find(l=>!result.solved.includes(l.id));result.nextStage=raw.campaignFinished&&pending&&!result.resume?pending.id:stages.some(l=>l.id===raw.nextStage)?raw.nextStage:pending?.id??0;
+ result.campaignFinished=!pending;result.tutorialDone=raw.tutorialDone===true;result.sessions=result.prefs.metrics&&Array.isArray(raw.sessions)?raw.sessions.slice(-100):[];return result;
 }
-let data=load(), view='home', mode='reset', session=null, selected=null, hintStep=0, hintPair=null;
-let playing=false, started=0, elapsed=0, hints=0, restarts=0, totalMoves=0, tutorial=0, drag=null, suppressClick=false, feedback='';
-let audioContext;
-const modes = {
-  daily:{title:'DESPIERTA.',subtitle:'Un pequeño descubrimiento para empezar.',duration:'2–4 min',label:'El reto del día',number:'01',icon:'sun'},
-  reset:{title:'REINICIA.',subtitle:'Cambia el ruido por una conexión.',duration:'2–3 min',label:'Una pausa breve',number:'02',icon:'orbit'},
-  deep:{title:'PROFUNDIZA.',subtitle:'Pocas piezas. Una idea más lejos.',duration:'4–5 min',label:'Un poco más de reto',number:'03',icon:'layers'}
-};
-const dateKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
-function save() { try { localStorage.setItem('nexo-v1',JSON.stringify(data)); } catch { storageAvailable=false; } }
-function announce(message) { $('#announcer').textContent=''; setTimeout(()=>$('#announcer').textContent=message,30); }
-function applyPrefs() {
-  const systemLight=matchMedia('(prefers-color-scheme: light)').matches;
-  document.documentElement.dataset.theme=data.prefs.theme==='system' ? (systemLight?'light':'dark') : data.prefs.theme;
-  document.documentElement.dataset.reduced=String(data.prefs.reduced || matchMedia('(prefers-reduced-motion: reduce)').matches);
-  $('meta[name="theme-color"]').content=document.documentElement.dataset.theme==='light'?'#F0EDE5':'#101820';
+function load(){try{return parseData(JSON.parse(localStorage.getItem('nexo-v1')||'null'));}catch{storageAvailable=false;return emptyData();}}
+let data=load(),view='home',mode='adventure',session=null,selected=null,hintStep=0,hintPair=null,feedback='',playing=false,started=0,elapsed=0,hints=0,restarts=0,totalMoves=0,drag=null,suppressClick=false,transitionNext=null,transitionTimer=null,adventurePage=0,freePage=0;
+const soundtrack=createSoundtrack(),atmosphere=createAtmosphere(),dialog=$('#settings'),ruleDialog=$('#rule-dialog');
+const save=()=>{try{localStorage.setItem('nexo-v1',JSON.stringify(data));}catch{storageAvailable=false;}};
+function announce(text){$('#announcer').textContent='';setTimeout(()=>$('#announcer').textContent=text,30);}
+function applyPrefs(){const light=data.prefs.theme==='light'||data.prefs.theme==='system'&&matchMedia('(prefers-color-scheme: light)').matches;document.documentElement.dataset.theme=light?'light':'dark';const reduced=data.prefs.reduced||matchMedia('(prefers-reduced-motion: reduce)').matches;document.documentElement.dataset.reduced=String(reduced);document.body.dataset.immersive=String(data.prefs.immersive);atmosphere.configure(session&&['game','transition','done'].includes(view)?worldFor(session.level):0,data.prefs.immersive,reduced);soundtrack.configure(data.prefs.music,data.prefs.volume);$('meta[name="theme-color"]').content=light?'#f0ede5':'#0b131d';}
+function show(next,focus=true){if(view==='game'&&next!=='game')pauseClock();clearTimeout(transitionTimer);view=next;document.body.dataset.view=view;if(!['game','transition'].includes(view))soundtrack.pause();applyPrefs();({home:renderHome,adventure:renderAdventure,collection:renderCollection,game:renderGame,transition:renderTransition,done:renderDone})[view]();if(focus){main.focus();scrollTo({top:0,behavior:'instant'});}}
+function renderHome(){main.innerHTML=`<section class="journey-menu"><div class="menu-orbit" aria-hidden="true"><i></i><i></i><i></i><span>✧</span></div><h1>NEXO</h1><button class="primary" id="begin">Aventura <span aria-hidden="true">→</span></button><div class="menu-options"><button class="text-button" id="free-play">Juego libre</button><button class="text-button" id="menu-settings">Ajustes</button></div></section>`;
+ $('#begin').onclick=()=>{const pending=stages.find(l=>l.id===(data.resume?.id??data.nextStage));adventurePage=Math.max(0,Math.floor(chapters.findIndex(c=>c.id===chapterIdFor(pending))/3));show('adventure');};$('#free-play').onclick=()=>{freePage=data.freeResume?Math.floor((data.freeResume.id-1)/10):0;show('collection');};$('#menu-settings').onclick=openSettings;
 }
-applyPrefs();
-matchMedia('(prefers-color-scheme: light)').addEventListener('change',applyPrefs);
-matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',applyPrefs);
-function sound() {
-  if (data.prefs.haptic && navigator.vibrate) navigator.vibrate(12);
-  if (!data.prefs.sound) return;
-  try {
-    audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
-    audioContext.resume();
-    const o=audioContext.createOscillator(), g=audioContext.createGain();
-    o.frequency.value=440; o.type='sine'; g.gain.setValueAtTime(.035,audioContext.currentTime);
-    g.gain.exponentialRampToValueAtTime(.001,audioContext.currentTime+.18);
-    o.connect(g); g.connect(audioContext.destination); o.start(); o.stop(audioContext.currentTime+.18);
-  } catch { /* Audio is optional. */ }
+function pageControls(id,page,size,total,label){const count=Math.ceil(total/size);return `<div class="catalog-pages"><button class="game-icon" id="${id}-previous" aria-label="Página anterior" ${page===0?'disabled':''}>‹</button><select id="${id}-page" aria-label="${label}">${Array.from({length:count},(_,i)=>`<option value="${i}" ${i===page?'selected':''}>${String(i*size+1).padStart(2,'0')}–${String(Math.min(total,(i+1)*size)).padStart(2,'0')} / ${total}</option>`).join('')}</select><button class="game-icon" id="${id}-next" aria-label="Página siguiente" ${page===count-1?'disabled':''}>›</button></div>`;}
+function bindPages(id,page,update){$('#'+id+'-page').onchange=e=>update(Number(e.target.value));$('#'+id+'-previous').onclick=()=>update(page-1);$('#'+id+'-next').onclick=()=>update(page+1);}
+function renderAdventure(){main.innerHTML=`<section class="phase-map"><button class="text-button back" id="adventure-back">← Menú</button><div class="overline">250 RETOS · 51 FASES</div><h1>AVENTURA.</h1>${pageControls('adventure',adventurePage,3,chapters.length,'Elegir página de fases')}<div class="chapter-list">${chapters.slice(adventurePage*3,adventurePage*3+3).map(c=>{const entries=chapterStages(stages,c.id),puzzles=entries.filter(l=>!l.tutorial),count=puzzles.filter(l=>data.solved.includes(l.id)).length;return `<button class="chapter-card" data-chapter="${c.id}" style="--chapter-rgb:${WORLDS[c.world].rgb}"><span class="chapter-id">${String(c.id+1).padStart(2,'0')}</span><span class="chapter-copy"><strong>${c.name}</strong><span>${c.description}</span><small>${puzzles.length} niveles${entries.some(l=>l.tutorial)?' + guía':''} · ${count} / ${puzzles.length} completados</small></span><span class="chapter-action">${entries.some(l=>l.id===data.resume?.id)?'Continuar':count===puzzles.length?'Repetir':'→'}</span></button>`;}).join('')}</div></section>`;
+ $('#adventure-back').onclick=()=>show('home');bindPages('adventure',adventurePage,page=>{adventurePage=page;renderAdventure();$('#adventure-page').focus();});document.querySelectorAll('[data-chapter]').forEach(b=>b.onclick=()=>{const entries=chapterStages(stages,Number(b.dataset.chapter));mode='adventure';soundtrack.unlock();if(entries.some(l=>l.id===data.resume?.id)){resume('adventure');return;}startLevel(entries.find(l=>l.id===data.nextStage)||entries.find(l=>!data.solved.includes(l.id))||entries[0]);});
 }
-function icon(name) {
-  const paths={sun:'<circle cx="16" cy="16" r="5"/><path d="M16 2v4m0 20v4M2 16h4m20 0h4M6 6l3 3m14 14 3 3M6 26l3-3M23 9l3-3"/>',orbit:'<circle cx="16" cy="16" r="10"/><circle cx="16" cy="16" r="3"/><path d="M6 6l20 20"/>',layers:'<path d="m16 4 12 7-12 7L4 11Zm-12 13 12 7 12-7M4 23l12 7 12-7"/>'};
-  return `<svg viewBox="0 0 32 32" aria-hidden="true">${paths[name]}</svg>`;
+function renderCollection(){const puzzles=stages.filter(l=>!l.tutorial);main.innerHTML=`<section class="collection"><button class="text-button back" id="phases-back">← Menú</button><div class="overline">250 RETOS A TU RITMO</div><h1>JUEGO LIBRE.</h1>${data.freeResume?'<button class="text-button" id="resume-free">Continuar reto pendiente →</button>':''}${pageControls('free',freePage,10,puzzles.length,'Elegir página de retos')}<div class="level-grid">${puzzles.slice(freePage*10,freePage*10+10).map(l=>`<button class="level-card" data-level="${l.id}"><span class="level-number">${String(l.id).padStart(2,'0')}</span><span class="level-name">${l.title}<small>${WORLDS[worldFor(l)].name} · ${data.prefs.harder?l.suggestedMoves:l.maxMoves} movimientos</small></span><span class="level-complete" aria-label="${data.freeSolved.includes(l.id)?'Resuelto':'Disponible'}">${data.freeSolved.includes(l.id)?'✓':'→'}</span></button>`).join('')}</div></section>`;
+ $('#phases-back').onclick=()=>show('home');$('#resume-free')?.addEventListener('click',()=>resume('free'));bindPages('free',freePage,page=>{freePage=page;renderCollection();$('#free-page').focus();});document.querySelectorAll('[data-level]').forEach(b=>b.onclick=()=>{mode='free';startLevel(stages.find(l=>l.id===Number(b.dataset.level)));});
 }
-function art() {
-  return `<div class="artboard" aria-hidden="true"><div class="art-grid"></div><svg class="art-lines" viewBox="0 0 460 400"><circle cx="230" cy="200" r="151"/><path d="M112 108 349 109 350 292 112 293 112 108 350 292M349 109 112 293"/><path class="accent-path" d="M112 108 349 109"/></svg><div class="art-node art-a"><span>●</span></div><div class="art-node art-b"><span>≋</span></div><div class="art-node art-c"><span>+</span></div><div class="art-node art-d"><span>●</span></div><span class="art-coordinate coord-one">01</span><span class="art-coordinate coord-two">02</span><span class="art-coordinate coord-three">03</span><span class="art-coordinate coord-four">04</span><span class="art-note">CONECTA PARA TRANSFORMAR</span><span class="art-spark">+</span></div>`;
+function startLevel(level,restoring=false){if(!restoring){if(session&&(session.playMode===mode)&&(mode==='free'?data.freeResume:data.resume)?.id===session.level.id)record(false);session={...createSession(level,data.prefs.harder?level.suggestedMoves:level.maxMoves),guidePhase:level.guide?'connect':'practice',playMode:mode};elapsed=0;hints=0;restarts=0;totalMoves=0;}selected=null;hintPair=null;hintStep=0;feedback='';started=performance.now();playing=true;if(mode==='adventure')data.nextStage=level.id;persistSession();soundtrack.unlock();show('game');soundtrack.play(worldFor(level));}
+function persistSession(){if(!session)return;const key=session.playMode==='free'?'freeResume':'resume';data[key]={id:session.level.id,state:session.state,history:session.history,moveLimit:session.moveLimit,guidePhase:session.guidePhase,elapsed:elapsed+(playing?performance.now()-started:0),hints,restarts,totalMoves,mode:session.playMode};save();}
+function pauseClock(){if(!playing)return;elapsed+=performance.now()-started;playing=false;persistSession();}
+function resume(value){mode=value;const r=mode==='free'?data.freeResume:data.resume,l=stages.find(s=>s.id===r?.id);if(!l)return;session={...createSession(l,r.moveLimit),state:[...r.state],history:r.history.map(s=>[...s]),guidePhase:r.guidePhase,playMode:mode};elapsed=Number.isFinite(r.elapsed)?r.elapsed:0;hints=r.hints||0;restarts=r.restarts||0;totalMoves=r.totalMoves||r.history.length;startLevel(l,true);}
+function targetMarkup(l){return `<div class="goal-strip"><span class="goal-label">OBJETIVO</span><ol class="target-nodes" aria-label="Patrón objetivo">${l.target.map((c,i)=>`<li><span class="target-chip color-${c}" role="img" aria-label="Posición ${i+1}: ${palette[c]}"><span aria-hidden="true">${marks[c]}</span></span><span class="target-index">${i+1}</span></li>`).join('')}</ol></div>`;}
+function renderGame(focusNode=null){const l=session.level,guide=guideState(session,selected),state=guide?.state||session.state,review=guide&&guide.phase!=='connect',progress=levelProgress(stages,l),chapter=chapters.find(c=>c.id===chapterIdFor(l)),remaining=remainingMoves(session);
+ main.innerHTML=`<section class="focused-game ${guide?'has-guide':''} ${review?'guide-review':''}"><div class="game-top"><button class="game-icon" id="pause" aria-label="Volver al menú">←</button><span>${mode==='free'?WORLDS[worldFor(l)].name:chapter.name.toUpperCase()} · ${mode==='free'?`LIBRE ${l.id}`:l.tutorial?'GUÍA':`NIVEL ${progress.number} / ${progress.total}`}</span><button class="game-icon" id="rule-help" aria-label="Ver las reglas">?</button></div><div class="game-heading">${guide?`<span class="guide-step">${guide.step}</span>`:''}<h1>${guide?.title||'ORDENA.'}</h1><p id="guide-instruction">${guide?.text||(l.rule==='swap'?'Conecta por las líneas. Copia el objetivo.':'Intercambia. La onda cambia la pieza siguiente al destino.')}</p></div>${targetMarkup(l)}<div class="board" id="board" role="group" aria-label="Tablero de ${l.nodes.length} piezas. Conecta por las líneas."><svg viewBox="0 0 100 100" class="edges" aria-hidden="true">${l.edges.map(([a,b])=>`<line x1="${l.nodes[a].x}" y1="${l.nodes[a].y}" x2="${l.nodes[b].x}" y2="${l.nodes[b].y}" class="${hintPair?.includes(a)&&hintPair?.includes(b)?'hint-edge':''}"/>`).join('')}<line id="drag-line" visibility="hidden" class="drag-line"/></svg>${l.nodes.map((n,i)=>`<button class="node color-${state[i]} ${selected===i?'is-selected':''} ${guide&&!guide.focus.includes(i)?'guide-muted':''} ${guide?.focus.includes(i)?'guide-focus':''} ${hintPair?.includes(i)?'hint-node':''}" data-node="${i}" style="--x:${n.x}%;--y:${n.y}%" aria-label="Pieza ${i+1}, ${palette[state[i]]}" aria-pressed="${selected===i}" ${review||remaining===0?'disabled':''}><span class="node-mark" aria-hidden="true">${marks[state[i]]}</span><span class="node-number" aria-hidden="true">${i+1}</span></button>`).join('')}</div><div class="game-bottom">${review?`<button class="primary guide-action" id="guide-next">${guide.button} <span aria-hidden="true">→</span></button>`:''}<div class="move-budget"><span>${remaining} ${remaining===1?'movimiento disponible':'movimientos disponibles'}</span><small>Máximo ${session.moveLimit}</small></div><div class="hint-box" role="status">${feedback}</div>${!review?`<div class="game-controls"><button id="undo" ${!session.history.length?'disabled':''}>↶ <span>Deshacer</span></button><button id="hint" ${guide?'disabled':''}>✧ <span>Pista</span></button><button id="restart">↻ <span>Reiniciar</span></button></div>`:''}<span class="moves-label">${session.history.length} ${session.history.length===1?'movimiento':'movimientos'} de ${session.moveLimit}</span></div></section>`;
+ $('#pause').onclick=()=>show('home');$('#rule-help').onclick=openRules;$('#undo')?.addEventListener('click',undoMove);$('#hint')?.addEventListener('click',giveHint);$('#restart')?.addEventListener('click',restart);$('#guide-next')?.addEventListener('click',()=>{session.guidePhase=session.guidePhase==='swap'?'result':'practice';persistSession();if(session.guidePhase==='practice'&&isSolved(l,session.state))complete();else renderGame();});
+ bindNodes(l);if(focusNode!==null)$(`[data-node="${focusNode}"]`)?.focus({preventScroll:true});
 }
-function nav() {
-  document.querySelectorAll('[data-nav]').forEach(el=>{const active=el.dataset.nav===(['game','done','rest','tutorial'].includes(view)?'home':view);el.classList.toggle('active',active);if(active)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');});
-  $('#section-label').textContent=view==='game'?'UNA COSA A LA VEZ':view==='collection'?'PEQUEÑOS SISTEMAS, GRANDES IDEAS':'EL ARTE DE HACER UNA PAUSA';
-}
-function show(next, focus=true) {
-  if (view==='game' && next!=='game') pauseClock();
-  view=next; document.body.dataset.view=view; nav();
-  ({home:renderHome,collection:renderCollection,about:renderAbout,game:renderGame,done:renderDone,rest:renderRest,tutorial:renderTutorial})[view]();
-  if(focus) { main.focus(); window.scrollTo({top:0,behavior:'instant'}); }
-}
-function renderHome() {
-  const m=modes[mode];
-  main.innerHTML=`<section class="home-hero"><div class="hero-copy"><div class="overline"><span class="small-line"></span>UNA PAUSA CON SENTIDO</div><h1>${m.title}</h1><p class="hero-description">${m.subtitle}<br>Un reto, un momento para ti.<br>Y después, sigue con tu día.</p><button class="primary" id="begin">${mode==='daily'?'Abrir el reto de hoy':'Empezar mi pausa'}<span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button><div class="hero-meta"><span class="clock-icon" aria-hidden="true">◷</span>${m.duration}<span class="meta-dot">·</span>Sin reloj. A tu ritmo.</div>${data.resume?'<button class="text-button resume" id="resume">Continuar mi puzzle pendiente ↗</button>':''}</div>${art()}</section><section class="modes-section" aria-label="Elige tu pausa"><div class="section-heading"><h2>¿Qué necesitas ahora?</h2><span>TRES FORMAS DE ENCONTRARTE</span></div><div class="mode-grid">${Object.entries(modes).map(([key,item])=>`<button class="mode-card ${mode===key?'chosen':''}" data-mode="${key}" aria-pressed="${mode===key}"><div class="mode-top">${icon(item.icon)}<span>${item.number} /</span></div><h3>${item.title}<span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></h3><p>${item.label}</p><div class="mode-bottom"><span>${item.duration}</span>${mode===key?'<span class="selected-pill">TU PAUSA</span>':'<span>Explorar</span>'}</div></button>`).join('')}</div></section><div class="home-note"><span class="note-symbol" aria-hidden="true">✳</span><p>No necesitas llegar más lejos.<br><strong>Solo estar aquí un momento.</strong></p><button class="text-button" id="learn">¿Cómo se juega? <span aria-hidden="true">→</span></button></div>`;
-  $('#begin').onclick=()=>startLevel(chooseLevel());
-  $('#resume')?.addEventListener('click',resume);
-  document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{mode=b.dataset.mode;renderHome();$(`[data-mode="${mode}"]`).focus();});
-  $('#learn').onclick=()=>{tutorial=0;show('tutorial');};
-}
-function chooseLevel() {
-  if(mode==='daily') return levels[dailyIndex(dateKey(),levels.length)];
-  const min=mode==='deep'||data.prefs.harder?5:0, max=mode==='deep'||data.prefs.harder?10:5;
-  const group=levels.slice(min,max);
-  if(data.prefs.metrics && data.sessions.length>=3 && !data.prefs.harder && mode==='reset') {
-    const recent=data.sessions.slice(-3);
-    if(recent.every(s=>s.completed && s.hints===0 && s.moves<=s.minimum+1)) return levels.slice(5).find(l=>!data.solved.includes(l.id))||levels[5];
-  }
-  return group.find(l=>!data.solved.includes(l.id))||group[0];
-}
-function startLevel(level, restoring=false) {
-  if(!restoring) {
-    if(session && data.resume) record(false);
-    session=createSession(level);elapsed=0;hints=0;restarts=0;totalMoves=0;
-  }
-  selected=null;hintStep=0;hintPair=null;feedback='';started=performance.now();playing=true;
-  persistSession();show('game');
-}
-function persistSession() {
-  if(!session) return;
-  data.resume={id:session.level.id,state:session.state,history:session.history,elapsed:elapsed+(playing?performance.now()-started:0),hints,restarts,totalMoves,mode};save();
-}
-function pauseClock() { if(playing) {elapsed+=performance.now()-started;playing=false;persistSession();} }
-function resume() {
-  const r=data.resume,level=levels.find(l=>l.id===r?.id); if(!level)return;
-  session={...createSession(level),state:[...r.state],history:r.history.map(s=>[...s])};elapsed=Number.isFinite(r.elapsed)?r.elapsed:0;hints=r.hints||0;restarts=r.restarts||0;totalMoves=r.totalMoves||r.history.length;mode=modes[r.mode]?r.mode:'reset';
-  startLevel(level,true);
-}
-function targetMarkup(level) {
-  return `<div class="target-label"><span class="eyebrow">TU OBJETIVO</span><span>Iguala cada posición</span></div><ol class="target-nodes" aria-label="Patrón objetivo">${level.target.map((c,i)=>`<li><span class="target-chip color-${c}" role="img" aria-label="Posición ${i+1}: ${palette[c]}"><span aria-hidden="true">${marks[c]}</span></span><span class="target-index">${i+1}</span></li>`).join('')}</ol>`;
-}
-function renderGame(focusNode=null) {
-  const l=session.level;
-  main.innerHTML=`<section class="game-view"><div class="game-top"><button class="text-button" id="pause">← Guardar y salir</button><span class="eyebrow">${String(l.id).padStart(2,'0')} / 10 <span class="slash">—</span> ${l.family}</span></div><div class="game-heading"><div><div class="overline">${l.title}</div><h1>ORDENA.</h1><p>${l.rule==='swap'?'Une dos piezas para intercambiar sus símbolos.':'Intercambia y transforma al siguiente vecino del destino.'}</p></div><button class="round-help" id="rule-help" aria-label="Ver las reglas">?</button></div><div class="play-layout"><div class="board-area"><span class="board-instruction">${selected===null?'ARRASTRA O TOCA DOS PIEZAS':`PIEZA ${selected+1} ELEGIDA · TOCA UN DESTINO`}</span><div class="board" id="board" role="group" aria-label="Tablero de ${l.nodes.length} piezas. Conecta por las líneas visibles."><svg viewBox="0 0 100 100" preserveAspectRatio="none" class="edges" aria-hidden="true">${l.edges.map(([a,b])=>`<line x1="${l.nodes[a].x}" y1="${l.nodes[a].y}" x2="${l.nodes[b].x}" y2="${l.nodes[b].y}" class="${hintPair&&hintPair.includes(a)&&hintPair.includes(b)?'hint-edge':''}"/>`).join('')}<line id="drag-line" x1="0" y1="0" x2="0" y2="0" class="drag-line" visibility="hidden"/></svg>${l.nodes.map((n,i)=>`<button class="node color-${session.state[i]} ${selected===i?'is-selected':''} ${hintPair?.includes(i)?'hint-node':''} ${session.events.some(e=>e.nodes.includes(i))?'changed':''}" data-node="${i}" style="--x:${n.x}%;--y:${n.y}%" aria-label="Pieza ${i+1}, ${palette[session.state[i]]}" aria-pressed="${selected===i}"><span class="node-mark" aria-hidden="true">${marks[session.state[i]]}</span><span class="node-number" aria-hidden="true">${i+1}</span></button>`).join('')}</div><div class="board-caption"><span class="live-dot"></span>${l.rule==='swap'?'Una conexión. Dos piezas que cambian.':'Una conexión. Una onda que continúa.'}</div></div><aside class="puzzle-aside">${targetMarkup(l)}<div class="rule-card"><span class="eyebrow">${l.rule==='swap'?'01 / INTERCAMBIO':'02 / PROPAGACIÓN'}</span><p>${l.rule==='swap'?'Los símbolos viajan de una pieza a otra. Las líneas marcan los caminos posibles.':'Tras intercambiar, el siguiente nodo del destino en sentido horario cambia: ● → ≋ → + → ●. También puede ser el origen.'}</p>${l.rule==='propagate'?'<span class="rule-direction">1 → 2 → … → 1 · sentido horario</span>':''}</div><div class="hint-box ${feedback?'has-hint':''}" role="status">${feedback||'Prueba una conexión.<br>Puedes deshacer todas las veces que quieras.'}</div><div class="game-controls"><button class="secondary" id="undo" ${!session.history.length?'disabled':''}><span aria-hidden="true">↶</span> Deshacer</button><button class="secondary" id="hint"><span aria-hidden="true">✧</span> Pista</button></div><button class="text-button reset-button" id="restart">Reiniciar puzzle ↻</button><span class="moves-label">${session.history.length} ${session.history.length===1?'movimiento':'movimientos'} · sin límite</span></aside></div></section>`;
-  $('#pause').onclick=()=>{pauseClock();show('home');announce('Puzzle guardado. Puedes volver cuando quieras.');};
-  $('#undo').onclick=undoMove; $('#restart').onclick=restart; $('#hint').onclick=giveHint;
-  $('#rule-help').onclick=()=>{feedback=l.rule==='swap'?'Conecta solo piezas unidas por una línea. Sus símbolos se intercambian. El objetivo muestra el símbolo de cada posición.':'La dirección importa: el vecino horario se cuenta desde el destino y también puede ser el origen. Sigue la numeración visible. ● cambia a ≋, ≋ a + y + a ●.';renderGame();};
-  document.querySelectorAll('[data-node]').forEach(el=>{
-    el.onclick=()=>{if(suppressClick){suppressClick=false;return;}selectNode(Number(el.dataset.node));};
-    el.onpointerdown=e=>{
-      if(e.button!==0)return;
-      drag={from:Number(el.dataset.node),x:e.clientX,y:e.clientY,moved:false};
-      el.setPointerCapture(e.pointerId);
-    };
-    el.onpointermove=e=>{
-      if(!drag)return;
-      if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>8)drag.moved=true;
-      if(!drag.moved)return;
-      const r=$('#board').getBoundingClientRect(), n=l.nodes[drag.from],line=$('#drag-line');
-      line.setAttribute('x1',n.x);line.setAttribute('y1',n.y);line.setAttribute('x2',(e.clientX-r.left)/r.width*100);line.setAttribute('y2',(e.clientY-r.top)/r.height*100);line.setAttribute('visibility','visible');
-    };
-    el.onpointerup=e=>{
-      if(!drag)return;
-      const d=drag;drag=null;
-      $('#drag-line').setAttribute('visibility','hidden');
-      if(d.moved){
-        suppressClick=true;setTimeout(()=>suppressClick=false,50);
-        const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-node]');
-        if(target&&Number(target.dataset.node)!==d.from)connect(d.from,Number(target.dataset.node));
-      }
-    };
-    el.onpointercancel=()=>{drag=null;$('#drag-line')?.setAttribute('visibility','hidden');};
-    let inspectTimer;
-    el.addEventListener('pointerdown',()=>{inspectTimer=setTimeout(()=>{if(drag&&!drag.moved&&session.events.length){const message=session.events.map(e=>e.type==='swap'?`Se intercambiaron las piezas ${e.nodes.map(n=>n+1).join(' y ')}.`:`La onda cambió la pieza ${e.nodes[0]+1}.`).join(' ');announce(message);feedback=message;$('.hint-box').textContent=message;}},650);});
-    for(const type of ['pointerup','pointercancel','pointermove'])el.addEventListener(type,()=>clearTimeout(inspectTimer));
-  });
-  if(focusNode!==null)$(`[data-node="${focusNode}"]`)?.focus({preventScroll:true});
-}
-function selectNode(i) {
-  if(selected===null){selected=i;renderGame(i);return;}
-  if(selected===i){selected=null;renderGame(i);return;}
-  connect(selected,i);
-}
-function connect(a,b) {
-  if(!isAllowed(session.level,a,b)){feedback='Estas piezas no comparten una línea. Elige una conexión visible.';selected=null;renderGame(a);announce(feedback);return;}
-  session=move(session,a,b);totalMoves++;selected=null;hintPair=null;hintStep=0;feedback='';sound();persistSession();
-  const msg=session.events.map(e=>e.type==='swap'?`Intercambio entre ${a+1} y ${b+1}.`:`La onda transforma la pieza ${e.nodes[0]+1}.`).join(' ');
-  if(isSolved(session.level,session.state))complete();else{renderGame(b);announce(msg);}
-}
-function undoMove() {
-  session=undo(session);selected=null;hintPair=null;hintStep=0;feedback='Un paso atrás. Todo vuelve a su lugar.';persistSession();renderGame();$('#undo').disabled?$('#hint').focus():$('#undo').focus();announce(feedback);
-}
-function restart() {
-  session=createSession(session.level);restarts++;selected=null;hintPair=null;hintStep=0;feedback='De nuevo, sin ninguna penalización.';persistSession();renderGame();$('#restart').focus();announce(feedback);
-}
-function giveHint() {
-  const path=solve(session.level,session.state);
-  if(!path?.length){feedback='Ya has encontrado el objetivo.';renderGame();return;}
-  hintStep=Math.min(hintStep+1,3);hints++;
-  const [a,b]=path[0];
-  if(hintStep===1){feedback=`Mira la pieza ${a+1} y compárala con su objetivo.`;hintPair=[a];}
-  if(hintStep===2){feedback=session.level.rule==='swap'?`La relación entre las piezas ${a+1} y ${b+1} puede acercarte al objetivo.`:`La dirección ${a+1} → ${b+1} importa: observa también el vecino horario del destino.`;hintPair=[a,b];}
-  if(hintStep===3){feedback=`Primer paso: conecta la pieza ${a+1} con la ${b+1}, en ese orden. Después vuelve a mirar el objetivo.`;hintPair=[a,b];}
-  persistSession();renderGame();$('#hint').focus();announce(feedback);
-}
-function record(completed) {
-  if(!data.prefs.metrics || !session)return;
-  data.sessions.push({date:dateKey(),level:session.level.id,mode,completed,seconds:Math.round((elapsed+(playing?performance.now()-started:0))/1000),moves:totalMoves,netMoves:session.history.length,minimum:session.level.suggestedMoves,hints,restarts});
-  data.sessions=data.sessions.slice(-100);save();
-}
-function complete() {
-  pauseClock();record(true);
-  if(!data.solved.includes(session.level.id))data.solved.push(session.level.id);
-  data.resume=null;save();show('done');announce('Hecho. Has igualado todas las posiciones. Ahora sigue con tu día.');
-}
-function renderDone() {
-  main.innerHTML=`<section class="ending"><div class="overline">TODAS LAS PIEZAS EN SU LUGAR</div><div class="resolved-art" aria-hidden="true">${session.state.map(c=>`<span class="resolved-node color-${c}">${marks[c]}</span>`).join('')}</div><h1>HECHO.</h1><p>Ahora sigue con tu día.</p><span class="ending-note">El reto termina aquí.<br>Lo que viene después es tuyo.</span><button class="primary" id="finish">Cerrar <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button><details class="more-menu"><summary>Otras opciones</summary><button class="text-button" id="another">Elegir otra partida</button><button class="text-button" id="review">Volver al último movimiento</button></details></section>`;
-  $('#finish').onclick=()=>{session=null;show('rest');};
-  $('#another').onclick=()=>{session=null;show('collection');};
-  $('#review').onclick=()=>{session=undo(session);started=performance.now();playing=true;hintPair=null;selected=null;feedback='';persistSession();show('game');};
-}
-function renderRest() {
-  main.innerHTML=`<section class="ending rest"><span class="rest-symbol" aria-hidden="true">✳</span><div class="overline">LA PAUSA ESTÁ COMPLETA</div><h1>HASTA<br>LUEGO.</h1><p>Puedes cerrar esta ventana.<br>Tu día te espera.</p><button class="text-button" id="back-home">Volver al inicio</button></section>`;
-  $('#back-home').onclick=()=>show('home');
-}
-function renderCollection() {
-  main.innerHTML=`<section class="collection"><div class="overline">VOL. 01 / DIEZ PEQUEÑOS DESCUBRIMIENTOS</div><h1>CONECTA.</h1><p class="page-description">Sin candados, sin un camino obligatorio.<br>Elige la idea que te apetezca explorar.</p>${['RESONANCIA','PROPAGACIÓN'].map((family,k)=>`<div class="family-heading"><h2>${family}</h2><span>${k?'Una conexión afecta a su vecino.':'Una conexión intercambia dos símbolos.'}</span></div><div class="level-grid">${levels.filter(l=>l.family===family).map(l=>`<button class="level-card" data-level="${l.id}"><span class="level-number">${String(l.id).padStart(2,'0')}</span><span class="level-name">${l.title}<small>${l.nodes.length} piezas · ${l.rule==='swap'?'intercambio':'propagación'}</small></span><span class="level-complete" aria-label="${data.solved.includes(l.id)?'Resuelto':'Disponible'}">${data.solved.includes(l.id)?'✓':'<svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg>'}</span></button>`).join('')}</div>`).join('')}</section>`;
-  document.querySelectorAll('[data-level]').forEach(b=>b.onclick=()=>{mode=Number(b.dataset.level)>5?'deep':'reset';startLevel(levels.find(l=>l.id===Number(b.dataset.level)));});
-}
-function renderAbout() {
-  main.innerHTML=`<section class="about"><div class="overline">ABRE. COMPRENDE. RESUELVE. CIERRA.</div><h1>MENOS.<br>PERO MEJOR.</h1><p class="about-lead">Un espacio pequeño para<br>una idea que merece tu atención.</p><div class="about-grid"><article><span class="eyebrow">01 / UNA SOLA COSA</span><h2>Conectar para transformar.</h2><p>Une dos piezas por una línea. Observa lo que cambia. Encuentra el patrón que ves en el objetivo. La profundidad está en las relaciones.</p></article><article><span class="eyebrow">02 / A TU RITMO</span><h2>El tiempo es tuyo.</h2><p>No hay cuenta atrás, rachas ni penalizaciones. Deshaz, pide una pista o deja el puzzle para otro momento.</p></article><article><span class="eyebrow">03 / UN FINAL CLARO</span><h2>Resolver y seguir.</h2><p>Sin anuncios, recompensas sorpresa ni otra partida automática. Un reto es suficiente; tú decides cuándo volver.</p></article><article><span class="eyebrow">04 / SIN PROMESAS VACÍAS</span><h2>Un juego. Una pausa.</h2><p>NEXO es entretenimiento, no un tratamiento ni una promesa de mejora cognitiva. Nombre provisional y prototipo en validación.</p></article></div><button class="primary" id="about-learn">Aprender jugando <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button></section>`;
-  $('#about-learn').onclick=()=>{tutorial=0;show('tutorial');};
-}
-function renderTutorial() {
-  const words=['TOCA.','UNE.','CAMBIA.','ORDENA.'];
-  const copy=['Todo empieza con una pieza.','Toca las dos piezas para conectarlas.','Al conectar, sus símbolos se intercambian.','Ahora busca el patrón del objetivo.'];
-  main.innerHTML=`<section class="tutorial"><div class="game-top"><span class="eyebrow">UN MINUTO PARA DESCUBRIRLO</span><button class="text-button" id="skip-tutorial">Ir al puzzle →</button></div><h1>${words[tutorial]}</h1><p>${copy[tutorial]}</p><div class="tutorial-stage ${tutorial===1?'guide':''}">${tutorial===0?'<button class="tutorial-node color-0" id="touch" aria-label="Toca la pieza para descubrir dos nodos">●</button>':tutorial<3?`<div class="tutorial-connection" aria-hidden="true"></div><button class="tutorial-node color-${tutorial===2?1:0}" id="tutorial-a" aria-label="Seleccionar primera pieza">${tutorial===2?'≋':'●'}</button><button class="tutorial-node color-${tutorial===2?0:1}" id="tutorial-b" aria-label="Conectar segunda pieza">${tutorial===2?'●':'≋'}</button>`:'<div class="tutorial-target" aria-hidden="true"><span class="target-chip color-1">≋</span><span class="target-chip color-0">●</span><span class="target-chip color-0">●</span><span class="target-chip color-2">+</span></div>'}</div><div class="tutorial-dots" aria-label="Paso ${tutorial+1} de 4">${words.map((_,i)=>`<i class="${i<=tutorial?'active':''}"></i>`).join('')}</div>${tutorial>=2?`<button class="primary" id="tutorial-next">${tutorial===3?'Probar mi primer puzzle':'Ver el objetivo'} <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>`:'<p class="fine-print">También puedes jugar arrastrando una pieza hasta otra.</p>'}</section>`;
-  $('#touch')?.addEventListener('click',()=>{tutorial=1;renderTutorial();sound();$('#tutorial-a').focus();});
-  let first=false;
-  for(const id of ['tutorial-a','tutorial-b'])$('#'+id)?.addEventListener('click',()=>{
-    if(tutorial!==1)return;
-    if(!first){first=id;$('#'+id).classList.add('is-selected');$('#'+(id==='tutorial-a'?'tutorial-b':'tutorial-a')).focus();}
-    else if(first!==id){tutorial=2;renderTutorial();sound();announce('Los símbolos han cambiado de lugar.');$('#tutorial-next').focus();}
-  });
-  $('#tutorial-next')?.addEventListener('click',()=>{if(tutorial===2){tutorial=3;renderTutorial();$('#tutorial-next').focus();}else{data.tutorialDone=true;save();startLevel(levels[0]);}});
-  $('#skip-tutorial').onclick=()=>startLevel(levels[0]);
-}
-document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>show(b.dataset.nav));
-$('.brand').onclick=e=>{e.preventDefault();show('home');};
-const dialog=$('#settings'), form=$('#preferences');
-function openSettings() {
-  if(view==='game')pauseClock();
-  for(const key of Object.keys(defaults)){if(key==='theme')form.elements[key].value=data.prefs[key];else form.elements[key].checked=data.prefs[key];}
-  $('#storage-notice').textContent=storageAvailable?'Progreso y preferencias se guardan solo en este navegador. Sin cuenta ni conexión obligatoria.':'El almacenamiento está bloqueado. Puedes jugar, pero el progreso se perderá al cerrar.';
-  dialog.showModal();
-}
-$('#settings-open').onclick=openSettings;$('.mobile-settings').onclick=openSettings;
-$('#settings-close').onclick=()=>dialog.close();
-dialog.addEventListener('close',()=>{if(view==='game'&&!document.hidden){started=performance.now();playing=true;}});
-form.onchange=()=>{
-  for(const key of Object.keys(defaults))data.prefs[key]=key==='theme'?form.elements[key].value:form.elements[key].checked;
-  if(!data.prefs.metrics)data.sessions=[];
-  save();applyPrefs();
-};
-$('#clear-data').onclick=()=>{
-  if(!confirm('¿Borrar progreso, puzzle pendiente, preferencias y métricas de este dispositivo?'))return;
-  data=emptyData();session=null;playing=false;save();applyPrefs();dialog.close();show('home');announce('Datos locales borrados.');
-};
-$('#export-data').onclick=()=>{
-  const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
-  const a=document.createElement('a');a.href=url;a.download='nexo-mis-datos.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-};
+function bindNodes(l){document.querySelectorAll('[data-node]').forEach(el=>{
+ el.onclick=()=>{if(suppressClick){suppressClick=false;return;}selectNode(Number(el.dataset.node));};
+ el.onpointerdown=e=>{if(e.button!==0||el.disabled)return;drag={from:Number(el.dataset.node),x:e.clientX,y:e.clientY,moved:false};el.setPointerCapture(e.pointerId);};
+ el.onpointermove=e=>{if(!drag)return;if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>8)drag.moved=true;if(!drag.moved)return;const r=$('#board').getBoundingClientRect(),n=l.nodes[drag.from],line=$('#drag-line');for(const [k,v] of Object.entries({x1:n.x,y1:n.y,x2:(e.clientX-r.left)/r.width*100,y2:(e.clientY-r.top)/r.height*100,visibility:'visible'}))line.setAttribute(k,v);};
+ el.onpointerup=e=>{if(!drag)return;const d=drag;drag=null;$('#drag-line')?.setAttribute('visibility','hidden');if(d.moved){suppressClick=true;setTimeout(()=>suppressClick=false,80);const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-node]');if(target&&Number(target.dataset.node)!==d.from)connect(d.from,Number(target.dataset.node));}};
+ el.onpointercancel=()=>{drag=null;$('#drag-line')?.setAttribute('visibility','hidden');};
+ });}
+function selectNode(i){const guide=guideState(session,selected);if(guide?.phase==='connect'&&!guide.focus.includes(i)){announce(guide.text);return;}if(selected===null){selected=i;renderGame(i);return;}if(selected===i){selected=null;renderGame(i);return;}connect(selected,i);}
+function connect(a,b){const guide=guideState(session);if(guide&&(guide.phase!=='connect'||a!==session.level.guideAction[0]||b!==session.level.guideAction[1]))return;if(!isAllowed(session.level,a,b)){feedback='Estas piezas no comparten una línea.';selected=null;renderGame(a);announce(feedback);return;}const next=move(session,a,b);if(next===session)return;session=next;totalMoves++;selected=null;hintPair=null;hintStep=0;feedback='';sound();if(guide)session.guidePhase=session.level.rule==='propagate'?'swap':'result';persistSession();if(!guide&&isSolved(session.level,session.state))complete();else{renderGame();announce(remainingMoves(session)===0?'Sin movimientos. Puedes deshacer o reiniciar.':`Conexión ${a+1} a ${b+1}.`);}}
+function undoMove(){session=undo(session);if(session.level.guide)session.guidePhase='connect';selected=null;hintPair=null;hintStep=0;feedback='';persistSession();renderGame();}
+function restart(){session={...createSession(session.level,session.moveLimit),guidePhase:session.level.guide?'connect':'practice',playMode:mode};restarts++;selected=null;hintPair=null;hintStep=0;feedback='';persistSession();renderGame();}
+function giveHint(){const path=solve(session.level,session.state);hints++;if(!path){feedback='Prueba a deshacer o reiniciar.';}else if(path.length>remainingMoves(session)){feedback='Desde aquí no se alcanza el objetivo con los movimientos disponibles. Deshaz o reinicia.';}else{hintStep=Math.min(hintStep+1,3);const [a,b]=path[0]||[];if(a===undefined)return;hintPair=hintStep===1?[a]:[a,b];feedback=hintStep===1?`Mira la pieza ${a+1} y su objetivo.`:hintStep===2?`Observa la conexión ${a+1} → ${b+1}${session.level.rule==='propagate'?' y la pieza siguiente al destino':''}.`:`Primer paso: conecta ${a+1} con ${b+1}, en ese orden.`;}persistSession();renderGame();$('#hint')?.focus();announce(feedback);}
+function sound(){if(data.prefs.haptic&&navigator.vibrate)navigator.vibrate(12);if(!data.prefs.sound)return;try{const Native=window.AudioContext||window.webkitAudioContext;sound.ctx||=new Native();sound.ctx.resume().catch(()=>{});const o=sound.ctx.createOscillator(),g=sound.ctx.createGain();o.frequency.value=500;o.connect(g);g.connect(sound.ctx.destination);g.gain.setValueAtTime(.025,sound.ctx.currentTime);g.gain.exponentialRampToValueAtTime(.0001,sound.ctx.currentTime+.18);o.start();o.stop(sound.ctx.currentTime+.2);}catch{}}
+function record(completed){if(!data.prefs.metrics||!session)return;data.sessions.push({date:new Date().toISOString(),level:session.level.id,mode:session.playMode,completed,seconds:Math.round(elapsed/1000),moves:totalMoves,netMoves:session.history.length,minimum:session.level.suggestedMoves,moveLimit:session.moveLimit,hints,restarts});data.sessions=data.sessions.slice(-100);save();}
+function complete(){pauseClock();record(true);if(mode==='free'){if(!data.freeSolved.includes(session.level.id))data.freeSolved.push(session.level.id);data.freeResume=null;transitionNext=null;save();show('done');return;}if(!data.solved.includes(session.level.id))data.solved.push(session.level.id);if(session.level.id===0)data.tutorialDone=true;const next=nextCampaignStage(stages,session.level.id),pending=stages.find(l=>!data.solved.includes(l.id));data.resume=null;data.nextStage=next?.id??pending?.id??0;data.campaignFinished=!pending;transitionNext=next;save();show(completesChapter(stages,session.level)?'done':'transition');announce('Conexión resuelta.');}
+function scheduleTransition(){clearTimeout(transitionTimer);if(view==='transition'&&!document.hidden&&transitionNext)transitionTimer=setTimeout(()=>{if(view==='transition')startLevel(transitionNext);},1800);}
+function renderTransition(){main.innerHTML=`<section class="phase-transition"><button class="game-icon transition-back" id="transition-pause" aria-label="Volver al menú">←</button><span class="transition-mark" aria-hidden="true">✧</span><h1>FLUYE.</h1><p>${transitionNext?.tutorial?'Una nueva forma de conectar.':transitionNext?.title||''}</p></section>`;scheduleTransition();$('#transition-pause').onclick=()=>show('home');}
+function renderDone(){const free=mode==='free',chapter=chapters.find(c=>c.id===chapterIdFor(session.level));main.innerHTML=`<section class="ending"><div class="resolved-art" aria-hidden="true">${session.state.map(c=>`<span class="resolved-node color-${c}">${marks[c]}</span>`).join('')}</div><div class="overline">${free?'RETO RESUELTO':`${chapter.name.toUpperCase()} · FASE COMPLETADA`}</div><h1>HECHO.</h1><p>${free?'Una conexión más clara.':data.campaignFinished?'Has completado los 250 retos.':'Sigue cuando quieras.'}</p>${!free&&!data.campaignFinished?`<button class="primary" id="continue-journey">${transitionNext?'Siguiente fase':'Continuar aventura'} <span aria-hidden="true">→</span></button><button class="text-button" id="finish">Menú</button>`:`<button class="primary" id="finish">${free?'Elegir otro reto':'Menú'} <span aria-hidden="true">→</span></button>`}${free?'<button class="text-button" id="free-menu">Menú</button>':''}</section>`;
+ $('#finish').onclick=()=>{session=null;show(free?'collection':'home');};$('#free-menu')?.addEventListener('click',()=>{session=null;show('home');});$('#continue-journey')?.addEventListener('click',()=>{session=null;mode='adventure';startLevel(transitionNext||stages.find(l=>l.id===data.nextStage)||stages[0]);});}
+function openRules(){pauseClock();soundtrack.pause();$('#rule-text').textContent=session.level.rule==='swap'?'Conecta dos piezas unidas por una línea: sus símbolos se intercambian.':'Primero se intercambian los extremos. Después, la pieza siguiente al destino en sentido horario cambia: ● → ≋ → + → ●. Sigue los números: tras la última viene la 1. Puede cambiar también el origen. La dirección importa.';ruleDialog.showModal();}
+function openSettings(){pauseClock();soundtrack.pause();for(const [key,value] of Object.entries(data.prefs)){const input=$('#preferences').elements[key];if(['theme','volume'].includes(key))input.value=value;else input.checked=value;}$('#storage-notice').textContent=storageAvailable?'El progreso se guarda automáticamente en este navegador. Puedes descargar una copia.':'El navegador bloquea el guardado. Descarga tu progreso antes de cerrar.';dialog.showModal();}
+function continueFromDialog(){if(view==='game'&&!document.hidden&&!dialog.open&&!ruleDialog.open){playing=true;started=performance.now();soundtrack.play(worldFor(session.level));}}
+$('#settings-close').onclick=()=>dialog.close();$('#quick-close').onclick=()=>ruleDialog.close();dialog.addEventListener('close',continueFromDialog);ruleDialog.addEventListener('close',continueFromDialog);
+$('#preferences').onchange=()=>{const form=$('#preferences');for(const key of Object.keys(defaults))data.prefs[key]=key==='theme'?form.elements[key].value:key==='volume'?Number(form.elements[key].value):form.elements[key].checked;if(!data.prefs.metrics)data.sessions=[];save();applyPrefs();};
+$('#export-data').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='NEXO-progreso.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+$('#import-data').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>2e6)throw Error();const parsed=JSON.parse(await file.text());if(parsed.version!==1||!Array.isArray(parsed.solved))throw Error();if(!confirm('¿Sustituir el progreso de este navegador por esta copia?'))return;data=parseData(parsed);session=null;playing=false;save();dialog.close();show('home');announce('Progreso restaurado.');}catch{announce('No se pudo leer esta copia.');$('#storage-notice').textContent='No se pudo leer esta copia. El progreso actual sigue guardado.';}e.target.value='';};
+$('#clear-data').onclick=()=>{if(!confirm('¿Borrar todo el progreso y los ajustes de este navegador?'))return;data=emptyData();session=null;playing=false;save();dialog.close();show('home');};
+$('#restart-adventure').onclick=()=>{if(!confirm('¿Reiniciar Aventura? Juego libre y los ajustes se conservarán.'))return;data.solved=[];data.resume=null;data.nextStage=0;data.campaignFinished=false;data.tutorialDone=false;session=null;playing=false;save();dialog.close();show('home');};
+for(const query of ['(prefers-color-scheme: light)','(prefers-reduced-motion: reduce)'])matchMedia(query).addEventListener('change',applyPrefs);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&selected!==null&&view==='game'){selected=null;renderGame();}});
-document.addEventListener('visibilitychange',()=>{
-  if(document.hidden)pauseClock();else if(view==='game'&&!dialog.open){started=performance.now();playing=true;}
-});
-window.addEventListener('pagehide',()=>{pauseClock();});
-const shortcut=new URLSearchParams(location.search).get('mode');
-if(modes[shortcut]){
-  mode=shortcut;
-  if(data.resume?.mode===shortcut && (shortcut!=='daily'||data.resume.id===chooseLevel().id))resume();
-  else startLevel(chooseLevel());
-}else show('home',false);
-if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){pauseClock();soundtrack.pause();clearTimeout(transitionTimer);}else{continueFromDialog();if(view==='transition'){soundtrack.play(worldFor(session.level));scheduleTransition();}}});
+window.addEventListener('pagehide',()=>{pauseClock();soundtrack.pause();});
+show('home',false);
+if('serviceWorker' in navigator && location.protocol!=='file:')navigator.serviceWorker.register(new URL('../sw.js',import.meta.url)).catch(()=>{});

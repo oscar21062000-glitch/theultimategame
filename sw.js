@@ -1,8 +1,4 @@
-const CACHE = 'nexo-v1';
-const FILES = ['/', '/index.html', '/src/style.css', '/src/app.js', '/src/engine.js', '/src/levels.json', '/icon.svg', '/manifest.webmanifest'];
-self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES))));
-self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('nexo-') && k !== CACHE).map(k => caches.delete(k))))));
-self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
-  event.respondWith(fetch(event.request).catch(() => caches.match(event.request).then(hit => hit || (event.request.mode === 'navigate' ? caches.match('/') : Response.error()))));
-});
+const CACHE='nexo-v9-recovered-250';const FILES=['./','./index.html','./src/app.js','./src/style.css','./src/engine.js','./src/campaign.js','./src/atmosphere.js','./src/soundtrack.js','./src/levels.json','./icon.svg','./manifest.webmanifest'];
+self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting())));
+self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('nexo-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
+self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).origin!==location.origin)return;e.respondWith(fetch(e.request).then(response=>{if(response.ok){const copy=response.clone();e.waitUntil(caches.open(CACHE).then(c=>c.put(e.request,copy)));}return response;}).catch(()=>caches.match(e.request).then(hit=>hit||(e.request.mode==='navigate'?caches.match(new URL('./index.html',self.registration.scope)):Response.error()))));});
